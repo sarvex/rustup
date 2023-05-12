@@ -54,12 +54,14 @@ if len(sys.argv) < 2:
 
 command = sys.argv[1]
 
-if not command in ["dev-to-local",
-                   "local-to-dev-archives",
-                   "update-dev-release",
-                   "local-to-prod-archives",
-                   "local-to-prod",
-                   "update-prod-release"]:
+if command not in [
+    "dev-to-local",
+    "local-to-dev-archives",
+    "update-dev-release",
+    "local-to-prod-archives",
+    "local-to-prod",
+    "update-prod-release",
+]:
     usage()
 
 if "--live-run" in sys.argv:
@@ -76,13 +78,10 @@ elif len(sys.argv) != 2:
 dev_s3_bucket = "dev-static-rust-lang-org"
 prod_s3_bucket = "static-rust-lang-org"
 
-s3_bucket = dev_s3_bucket
-if "prod" in command:
-    s3_bucket = prod_s3_bucket
-
-print("s3 bucket: " + s3_bucket)
-print("command: " + command)
-print("archive version: " + str(archive_version))
+s3_bucket = prod_s3_bucket if "prod" in command else dev_s3_bucket
+print(f"s3 bucket: {s3_bucket}")
+print(f"command: {command}")
+print(f"archive version: {str(archive_version)}")
 
 # First, deal with the binaries
 
@@ -91,27 +90,24 @@ if command == "dev-to-local":
     if os.path.exists("local-rustup/dist"):
         shutil.rmtree("local-rustup/dist")
     os.makedirs("local-rustup/dist")
-    s3cmd = "aws s3 cp --recursive s3://{}/rustup/dist/ ./local-rustup/dist/".format(s3_bucket)
-elif command == "local-to-dev-archives" \
-     or command == "local-to-prod-archives":
-    s3cmd = "aws s3 cp --recursive ./local-rustup/dist/ s3://{}/rustup/archive/{}/".format(s3_bucket, archive_version)
+    s3cmd = f"aws s3 cp --recursive s3://{s3_bucket}/rustup/dist/ ./local-rustup/dist/"
+elif command in ["local-to-dev-archives", "local-to-prod-archives"]:
+    s3cmd = f"aws s3 cp --recursive ./local-rustup/dist/ s3://{s3_bucket}/rustup/archive/{archive_version}/"
 elif command == "local-to-prod":
-    s3cmd = "aws s3 cp --recursive local-rustup/dist/ s3://{}/rustup/dist/".format(s3_bucket)
-elif command == "update-dev-release" \
-     or command == "update-prod-release":
-    s3cmd = "aws s3 cp ./local-rustup/release-stable.toml s3://{}/rustup/release-stable.toml".format(s3_bucket)
+    s3cmd = f"aws s3 cp --recursive local-rustup/dist/ s3://{s3_bucket}/rustup/dist/"
+elif command in ["update-dev-release", "update-prod-release"]:
+    s3cmd = f"aws s3 cp ./local-rustup/release-stable.toml s3://{s3_bucket}/rustup/release-stable.toml"
 else:
     sys.exit(1)
 
-print("s3 command: {}".format(s3cmd))
+print(f"s3 command: {s3cmd}")
 print()
 
 # Create the release information
-if command == "update-dev-release" \
-   or command == "update-prod-release":
+if command in ["update-dev-release", "update-prod-release"]:
     with open("./local-rustup/release-stable.toml", "w") as f:
         f.write("schema-version = '1'\n")
-        f.write("version = '{}'\n".format(archive_version))
+        f.write(f"version = '{archive_version}'\n")
 
 def run_s3cmd(command):
     s3cmd = command.split(" ")
@@ -134,21 +130,26 @@ run_s3cmd(s3cmd)
 if command == "dev-to-local":
     if os.path.exists("local-rustup/rustup-init.sh"):
         os.remove("local-rustup/rustup-init.sh")
-    run_s3cmd("aws s3 cp s3://{}/rustup/rustup-init.sh ./local-rustup/rustup-init.sh"
-              .format(s3_bucket))
+    run_s3cmd(
+        f"aws s3 cp s3://{s3_bucket}/rustup/rustup-init.sh ./local-rustup/rustup-init.sh"
+    )
     if os.path.exists("local-rustup/www"):
         shutil.rmtree("local-rustup/www")
     os.makedirs("local-rustup/www")
-    run_s3cmd("aws s3 cp --recursive s3://{}/rustup/www/ ./local-rustup/www/"
-              .format(s3_bucket))
+    run_s3cmd(
+        f"aws s3 cp --recursive s3://{s3_bucket}/rustup/www/ ./local-rustup/www/"
+    )
 
 if command == "local-to-prod":
-    run_s3cmd("aws s3 cp ./local-rustup/rustup-init.sh s3://{}/rustup/rustup-init.sh"
-              .format(s3_bucket))
-    run_s3cmd("aws s3 cp ./local-rustup/rustup-init.sh s3://{}/rustup.sh"
-              .format(s3_bucket))
-    run_s3cmd("aws s3 cp --recursive ./local-rustup/www/ s3://{}/rustup/www/"
-              .format(s3_bucket))
+    run_s3cmd(
+        f"aws s3 cp ./local-rustup/rustup-init.sh s3://{s3_bucket}/rustup/rustup-init.sh"
+    )
+    run_s3cmd(
+        f"aws s3 cp ./local-rustup/rustup-init.sh s3://{s3_bucket}/rustup.sh"
+    )
+    run_s3cmd(
+        f"aws s3 cp --recursive ./local-rustup/www/ s3://{s3_bucket}/rustup/www/"
+    )
     if live_run:
         # Invalidate sh.rustup.rs
         run_s3cmd("aws cloudfront create-invalidation --distribution-id " +
